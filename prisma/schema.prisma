@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  photoUrl      String?
+  role          UserRole  @default(EMPLOYEE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  isVerified    Boolean   @default(false)
+  objectHistory History[]
+}
+
+model Room {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  isTransit   Boolean   @default(false)
+  objects     Object[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Object {
+  id          String    @id @default(cuid())
+  name        String
+  category    Category
+  quantity    Int
+  description String?
+  roomId      String
+  room        Room      @relation(fields: [roomId], references: [id])
+  history     History[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  parentId    String?
+  parent      Object?   @relation("Variants", fields: [parentId], references: [id])
+  variants    Object[]  @relation("Variants")
+}
+
+model History {
+  id        String   @id @default(cuid())
+  objectId  String
+  object    Object   @relation(fields: [objectId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    Action
+  details   String?
+  createdAt DateTime @default(now())
+}
+  // isActive  Boolean  @default(true)
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String
+  message   String
+  details   Json?
+  userId    String?
+  createdAt DateTime @default(now())
+  read      Boolean  @default(false)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+enum UserRole {
+  MANAGER
+  EMPLOYEE
+}
+
+enum Category {
+  CONSUMABLE
+  TEXTILE
+  EQUIPMENT
+  OTHER
+}
+
+enum Action {
+  CREATE
+  UPDATE
+  DELETE
+  MOVE
+  TRANSIT
+}
