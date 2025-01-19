@@ -73,16 +73,7 @@ export const getObjectById = async (req: Request, res: Response): Promise<void> 
     const { objectId } = req.params;
 
     const object = await prisma.object.findUnique({
-      where: { id: objectId },
-      include: {
-        room: true,
-        parent: true,
-        variants: true,
-        history: {
-          take: 1,
-          orderBy: { createdAt: 'desc' }
-        }
-      }
+      where: { id: objectId }
     });
     if (!object) {
       res.status(404).json({ error: 'Object not found' });
@@ -309,3 +300,35 @@ export const getObjectHistory = async (req: Request, res: Response): Promise<voi
     res.status(500).json({ error: 'Server error' });
   }
 }; 
+
+export const getAllObjects = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get all objects with their rooms
+    const objects = await prisma.object.findMany({
+      include: {
+        room: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        history: {
+          take: 1,
+          orderBy: { createdAt: 'desc' }
+        }
+      }
+    });
+
+    // Format the response
+    const formattedObjects = objects.map(object => ({
+      ...object,
+      roomName: object.room.name, // Add room name to object
+      // room: undefined // Remove full room object if not needed
+    }));
+
+    res.json(formattedObjects);
+  } catch (error) {
+    console.error('Error fetching objects:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};

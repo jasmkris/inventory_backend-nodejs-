@@ -10,7 +10,8 @@ import {
   moveObject,
   createVariant,
   getObjectHistory,
-  transitObject
+  transitObject,
+  getAllObjects
 } from '../controllers/objectController';
 
 const router = express.Router();
@@ -28,6 +29,8 @@ router.post(
   ]),
   createObject
 );
+
+router.get('/', auth, getAllObjects);
 
 router.get('/:objectId', auth, getObjectById);
 
