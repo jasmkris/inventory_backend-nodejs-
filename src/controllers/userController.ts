@@ -19,7 +19,7 @@ export const getProfile = async (req: Request, res: Response) => {
       }
     });
 
-    res.json(user);
+    res.status(200).json(user);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -62,7 +62,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       }
     });
 
-    res.json(updatedUser);
+    res.status(200).json(updatedUser);
   } catch (error) {
     res.status(400).json({ error: 'Update failed' });
   }
@@ -86,7 +86,7 @@ export const uploadPhoto = async (req: Request & { file?: Express.Multer.File },
       }
     });
 
-    res.json(updatedUser);
+    res.status(200).json(updatedUser);
   } catch (error) {
     res.status(400).json({ error: 'Upload failed' });
   }
@@ -107,7 +107,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       }
     });
 
-    res.json(users);
+    res.status(200).json(users);
   } catch (error) {
     res.status(400).json({ error: 'Failed to fetch users' });
   }
@@ -128,7 +128,7 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
       }
     });
 
-    res.json(updatedUser);
+    res.status(200).json(updatedUser);
   } catch (error) {
     res.status(400).json({ error: 'Role update failed' });
   }
@@ -142,8 +142,56 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       where: { id: userId }
     });
 
-    res.json({ message: 'User deleted successfully' });
+    res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(400).json({ error: 'Delete failed' });
   }
 }; 
+
+export const approveUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: true },
+      select: { id: true, isVerified: true }
+    });
+    console.log(updatedUser, 'updatedUser');
+    
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    res.status(400).json({ error: 'Approval failed' });
+  }
+};
+
+export const rejectUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+
+    res.status(200).json({ message: 'User rejected successfully' });
+  } catch (error) {
+    res.status(400).json({ error: 'Rejection failed' });
+  }
+};
+
+export const revokeUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: false },
+      select: { id: true, isVerified: true }
+    });
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    res.status(400).json({ error: 'Revocation failed' });
+  }
+};
+

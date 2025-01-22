@@ -18,8 +18,8 @@ export const createObject = async (req: Request, res: Response): Promise<void> =
 
     // Validate category enum
     if (!Object.values(Category).includes(category)) {
-        res.status(400).json({ error: `Invalid category. Must be one of: ${Object.values(Category).join(', ')}` });
-        return;
+      res.status(400).json({ error: `Invalid category. Must be one of: ${Object.values(Category).join(', ')}` });
+      return;
     }
 
     // Check if room exists
@@ -61,7 +61,7 @@ export const createObject = async (req: Request, res: Response): Promise<void> =
     res.status(201).json(object);
   } catch (error) {
     console.error('Error creating object:', error);
-    res.status(400).json({ 
+    res.status(400).json({
       error: 'Failed to create object',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -73,8 +73,17 @@ export const getObjectById = async (req: Request, res: Response): Promise<void> 
     const { objectId } = req.params;
 
     const object = await prisma.object.findUnique({
-      where: { id: objectId }
+      where: { id: objectId },
+      include: {
+        room: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
     });
+
     if (!object) {
       res.status(404).json({ error: 'Object not found' });
       return;
@@ -82,6 +91,7 @@ export const getObjectById = async (req: Request, res: Response): Promise<void> 
 
     res.json(object);
   } catch (error) {
+    console.error('Error fetching object:', error);
     res.status(500).json({ error: 'Failed to fetch object' });
   }
 };
@@ -89,8 +99,8 @@ export const getObjectById = async (req: Request, res: Response): Promise<void> 
 export const updateObject = async (req: Request, res: Response): Promise<void> => {
   try {
     const { objectId } = req.params;
-    const { name, category, quantity, description } = req.body;
-
+    const { name, category, quantity, description, roomId } = req.body;
+    console.log(name, category, quantity, description, roomId, 'req.body updateObject');
     const object = await prisma.object.update({
       where: { id: objectId },
       data: {
@@ -98,6 +108,7 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
         category,
         quantity,
         description,
+        roomId,
         history: {
           create: {
             action: 'UPDATE',
@@ -114,8 +125,8 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
         }
       }
     });
-
-    res.json(object);
+    console.log(object, 'object updateObject');
+    res.status(200).json({ message: 'Object updated successfully', object });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -123,26 +134,92 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
 
 export const deleteObject = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { objectId } = req.params;
-    const { reason } = req.body;
-
+    const { objectIds } = req.body;
+    console.log('Objects to delete:', objectIds);
+    console.log('User ID:', req.user!.id);
     // Create final history entry before deletion
-    await prisma.history.create({
-      data: {
-        objectId,
-        userId: req.user!.id,
-        action: 'DELETE',
-        details: reason || 'Object deleted'
-      }
+    const deletedObjects: any[] = [];
+    // const errors = [];
+
+    objectIds.map(async (id: string) => {
+      await prisma.history.create({
+        data: {
+          objectId: id,
+          userId: req.user!.id,
+          action: 'DELETE',
+          details: 'Object deleted'
+        }
+      });
+
+      // 2. Delete existing history records
+      await prisma.history.deleteMany({
+        where: { objectId: id }
+      });
+
+      // 3. Finally delete the object
+      await prisma.object.delete({
+        where: { id: id }
+      });
+      deletedObjects.push(id);
     });
 
-    await prisma.object.delete({
-      where: { id: objectId }
-    });
-
-    res.json({ message: 'Object deleted successfully' });
-  } catch (error) {
+    console.log('Deleted objects:', deletedObjects);
+    // console.log('Errors:', errors);
+    res.status(200).json({ message: 'Object deleted successfully' });
+  } catch (error: any) {
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+export const deleteAllObjects = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { roomId } = req.params;
+    console.log('Room ID:', roomId);
+
+    // First get all objects in this room
+    const objectsInRoom = await prisma.object.findMany({
+      where: { roomId },
+      select: { id: true }
+    });
+
+    const objectIds = objectsInRoom.map(obj => obj.id);
+    console.log('Objects to delete:', objectIds);
+
+    if (objectIds.length === 0) {
+      res.status(200).json({ message: 'No objects found in this room' });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Create deletion history entries for all objects
+      await tx.history.createMany({
+        data: objectIds.map(id => ({
+          objectId: id,
+          userId: req.user!.id,
+          action: 'DELETE',
+          details: `Object deleted from room ${roomId}`
+        }))
+      });
+      await tx.history.deleteMany({
+        where: { objectId: { in: objectIds } }
+      });
+      // Delete all objects in the room
+      await tx.object.deleteMany({
+        where: { roomId }
+      });
+    });
+    
+    res.status(200).json({ 
+      message: 'All objects deleted successfully',
+      deletedCount: objectIds.length,
+      roomId
+    });
+  } catch (error) {
+    console.error('Delete operation failed:', error);
+    res.status(500).json({ 
+      error: 'Server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
@@ -299,7 +376,7 @@ export const getObjectHistory = async (req: Request, res: Response): Promise<voi
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
-}; 
+};
 
 export const getAllObjects = async (req: Request, res: Response): Promise<void> => {
   try {

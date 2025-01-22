@@ -9,7 +9,7 @@ class RedisService {
       this.client = new Redis({
         host: process.env.REDIS_HOST || 'redis-14531.c61.us-east-1-3.ec2.redns.redis-cloud.com',
         port: Number(process.env.REDIS_PORT) || 14531,
-        password: process.env.REDIS_PASSWORD || '123456789',
+        password: process.env.REDIS_PASSWORD || 'AVNS_KNHsu3LjVAXU7Fp2qfI',
         retryStrategy: (times) => {
           if (times > 3) {
             this.isConnected = false;

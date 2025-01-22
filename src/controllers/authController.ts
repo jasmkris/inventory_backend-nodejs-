@@ -108,6 +108,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    if (!user.isVerified) {
+      res.status(401).json({ error: 'User is not verified' });
+      return;
+    }
+
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET!,

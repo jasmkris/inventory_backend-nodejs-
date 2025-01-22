@@ -11,7 +11,8 @@ import {
   createVariant,
   getObjectHistory,
   transitObject,
-  getAllObjects
+  getAllObjects,
+  deleteAllObjects
 } from '../controllers/objectController';
 
 const router = express.Router();
@@ -41,13 +42,15 @@ router.put(
     body('name').optional().notEmpty().trim(),
     body('category').optional().isIn(['CONSUMABLE', 'TEXTILE', 'EQUIPMENT', 'OTHER']),
     body('quantity').optional().isInt({ min: 1 }),
-    body('description').optional().trim()
+    body('description').optional().trim(),
+    body('roomId').optional().notEmpty()
   ]),
   updateObject
 );
 
-router.delete('/:objectId', auth, deleteObject);
+router.delete('/', auth, deleteObject);
 
+router.delete('/all/:roomId', auth, deleteAllObjects);
 // Special operations
 router.post(
   '/:objectId/move',
