@@ -11,11 +11,12 @@ import {
   rejectUser,
   revokeUser
 } from '../controllers/userController';
+import { upload as uploadMiddleware } from '../middleware/upload';
 
 const router = express.Router();
 
 router.put('/profile', auth, updateProfile);
-router.post('/profile/photo', auth, uploadPhoto);
+router.post('/profile/photo', auth, uploadMiddleware.single('file'), uploadPhoto);
 
 // Manager only routes
 router.get('/all', auth, checkRole(['MANAGER']), getAllUsers);

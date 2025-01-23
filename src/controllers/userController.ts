@@ -27,7 +27,7 @@ export const getProfile = async (req: Request, res: Response) => {
 
 export const updateProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { firstName, lastName, email, currentPassword, newPassword } = req.body;
+    const { id, firstName, lastName, email, currentPassword, newPassword } = req.body;
 
     const updateData: any = {};
     if (firstName) updateData.firstName = firstName;
@@ -37,7 +37,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     // If changing password, verify current password
     if (newPassword) {
       const user = await prisma.user.findUnique({
-        where: { id: req.user!.id }
+        where: { id: id}
       });
 
       const isMatch = await bcrypt.compare(currentPassword, user!.password);
@@ -50,7 +50,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: req.user!.id },
+      where: { id: id },
       data: updateData,
       select: {
         id: true,
@@ -75,7 +75,7 @@ export const uploadPhoto = async (req: Request & { file?: Express.Multer.File },
       return;
     }
 
-    const photoUrl = `/uploads/${req.file.filename}`;
+    const photoUrl = `/uploads/profiles/${req.file.filename}`;
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user!.id },
@@ -146,7 +146,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     res.status(400).json({ error: 'Delete failed' });
   }
-}; 
+};
 
 export const approveUser = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -158,7 +158,7 @@ export const approveUser = async (req: Request, res: Response): Promise<void> =>
       select: { id: true, isVerified: true }
     });
     console.log(updatedUser, 'updatedUser');
-    
+
     res.status(200).json(updatedUser);
   } catch (error) {
     res.status(400).json({ error: 'Approval failed' });

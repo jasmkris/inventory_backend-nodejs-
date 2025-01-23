@@ -7,31 +7,6 @@ import multer from 'multer';
 
 const prisma = new PrismaClient();
 
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, process.env.UPLOAD_PATH || './uploads/profiles')
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, `${Date.now()}-${file.originalname}`)
-//   }
-// });
-
-// const upload = multer({
-//   storage,
-//   fileFilter: (req, file, cb) => {
-//     console.log(req.body, file, '00000000000');
-
-//     if (file.mimetype.startsWith('image/')) {
-//       cb(null, true);
-//     } else {
-//       cb(new Error('Not an image! Please upload an image.'));
-//     }
-//   },
-//   limits: {
-//     fileSize: 5 * 1024 * 1024 // 5MB limit
-//   }
-// }).single('photoId');
-
 export const register = async (req: Request, res: Response) => {
   try {
     const { email, password, fullName } = req.body;
