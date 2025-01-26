@@ -557,7 +557,7 @@ export const getAllObjects = async (req: Request, res: Response): Promise<void> 
       // room: undefined // Remove full room object if not needed
     }));
 
-    res.json(formattedObjects);
+    res.status(200).json(formattedObjects);
   } catch (error) {
     console.error('Error fetching objects:', error);
     res.status(500).json({ error: 'Server error' });
