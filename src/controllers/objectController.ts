@@ -127,7 +127,7 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
             userName: `${user.firstName} ${user.lastName}`,
             objectName: name || existingObject.name,
             roomName: room?.name || existingObject.room.name,
-            details: `${existingObject.name} updated to ${quantity} from ${existingObject.quantity}`
+            details: `${existingObject.name} updated to ${name} ${category} ${description}  from ${existingObject.name} ${existingObject.category} ${existingObject.description}`
           }
         }
       },
@@ -139,7 +139,6 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
         }
       }
     });
-    console.log(object, 'object updateObject');
     res.status(200).json({ message: 'Object updated successfully', object });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -182,7 +181,7 @@ export const removeObjectQuantity = async (req: Request, res: Response): Promise
       await tx.history.create({
         data: {
           action: 'REMOVE',
-          objectId: object.id,
+          objectId: objectId,
           userId: user.id,
           objectName: object.name,
           userName: `${user.firstName} ${user.lastName}`,
@@ -374,6 +373,16 @@ export const updateObjectQuantity = async (req: Request, res: Response): Promise
 
     console.log(objectId, quantity, 'updateObjectQuantity');
     
+    const object = await prisma.object.findUnique({
+      where: { id: objectId },
+      include: { room: true }
+    });
+
+    if (!object) {
+      res.status(404).json({ error: 'Object not found' });
+      return;
+    }
+
     await prisma.object.update({
       where: { id: objectId },
       data: { quantity }
@@ -394,7 +403,7 @@ export const updateObjectQuantity = async (req: Request, res: Response): Promise
         userName: `${user!.firstName} ${user!.lastName}`,
         objectName: updatedObject!.name,
         roomName: updatedObject!.room.name,
-        details: `${updatedObject!.name} updated quantity to ${quantity} from ${updatedObject!.quantity}`
+        details: `${updatedObject!.name} updated quantity to ${quantity} from ${object!.quantity}`
       }
     });
 
@@ -517,7 +526,7 @@ export const getObjectHistory = async (req: Request, res: Response): Promise<voi
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json(history);
+    res.status(200).json(history);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -554,3 +563,67 @@ export const getAllObjects = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+export const getHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get all objects with their most recent history and total quantity
+    const objectsWithHistory = await prisma.object.groupBy({
+      by: ['id', 'name', 'category'],  // Group by ID first
+      _sum: {
+        quantity: true
+      }
+    });
+
+    // Get detailed history for each object
+    const formattedHistory = await Promise.all(
+      objectsWithHistory.map(async (obj) => {
+        const latestHistory = await prisma.history.findFirst({
+          where: {
+            objectId: obj.id  // Use object ID instead of name
+          },
+          orderBy: {
+            createdAt: 'desc'
+          },
+          include: {
+            user: {
+              select: {
+                firstName: true,
+                lastName: true
+              }
+            },
+            object: {
+              include: {
+                room: true
+              }
+            }
+          }
+        });
+
+        if (!latestHistory) return null;
+
+        return {
+          id: latestHistory.objectId,
+          objectName: obj.name,
+          action: latestHistory.action,
+          details: latestHistory.details,
+          quantity: obj._sum.quantity || 0,
+          timestamp: latestHistory.createdAt,
+          userName: latestHistory.user ? `${latestHistory.user.firstName} ${latestHistory.user.lastName}` : 'Unknown User',
+          roomName: latestHistory.roomName,
+          objectId: latestHistory.objectId
+        };
+      })
+    );
+
+    // Filter out nulls and sort by timestamp
+    const sortedHistory = formattedHistory
+      .filter(Boolean)
+      .sort((a, b) => b!.timestamp.getTime() - a!.timestamp.getTime());
+
+    res.json(sortedHistory);
+  } catch (error) {
+    console.error('Error fetching history:', error);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+};
+

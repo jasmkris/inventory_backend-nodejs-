@@ -14,7 +14,8 @@ import {
   getAllObjects,
   deleteAllObjects,
   updateObjectQuantity,
-  removeObjectQuantity
+  removeObjectQuantity,
+  getHistory
 } from '../controllers/objectController';
 
 const router = express.Router();
@@ -104,6 +105,11 @@ router.post(
 );
 
 // History
-router.get('/:objectId/history', auth, getObjectHistory);
+router.post('/history', getHistory);
+
+// each object History
+router.get('/:objectId/history', getObjectHistory);
+
+router.post('/:objectId/details', getObjectById);
 
 export default router; 
