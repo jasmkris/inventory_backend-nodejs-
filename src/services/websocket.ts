@@ -16,6 +16,16 @@ export class WebSocketService {
       }
     });
 
+    console.log('WebSocket Server initialized');
+
+    this.io.on('connection', (socket) => {
+      console.log(`Socket connected: ${socket.id}`);
+      
+      socket.on('disconnect', () => {
+        console.log(`Socket disconnected: ${socket.id}`);
+      });
+    });
+
     this.setupMiddleware();
     this.setupEventHandlers();
   }
@@ -147,5 +157,15 @@ export class WebSocketService {
 
   notifySystemAlert(notification: any): void {
     this.broadcast('system_alert', notification);
+  }
+
+  sendToUser(userId: string, event: string, data: any) {
+    console.log(`Sending ${event} to user ${userId}:`, data);
+    const userSockets = this.userSessions.get(userId);
+    if (userSockets) {
+      userSockets.forEach(socketId => {
+        this.io.to(socketId).emit(event, data);
+      });
+    }
   }
 }

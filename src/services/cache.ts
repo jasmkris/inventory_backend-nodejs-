@@ -87,20 +87,20 @@ export class CacheService {
   }
 
   private async compress(data: any): Promise<string> {
-    const { compress } = await import('zlib');
+    const { gzip } = await import('zlib');
     const { promisify } = await import('util');
-    const compressAsync = promisify(compress);
+    const gzipAsync = promisify(gzip);
     
-    const buffer = await compressAsync(Buffer.from(JSON.stringify(data)));
+    const buffer = await gzipAsync(Buffer.from(JSON.stringify(data)));
     return buffer.toString('base64');
   }
 
   private async decompress(data: string): Promise<any> {
-    const { decompress } = await import('zlib');
+    const { gunzip } = await import('zlib');
     const { promisify } = await import('util');
-    const decompressAsync = promisify(decompress);
+    const gunzipAsync = promisify(gunzip);
     
-    const buffer = await decompressAsync(Buffer.from(data, 'base64'));
+    const buffer = await gunzipAsync(Buffer.from(data, 'base64'));
     return JSON.parse(buffer.toString());
   }
 
@@ -108,7 +108,7 @@ export class CacheService {
     const fullKeys = keys.map(key => this.buildKey(key, options));
     const values = await redisService.mget(fullKeys);
     
-    return values.map(value => 
+    return values.map((value: any) => 
       value ? (options.useCompression ? this.decompress(value) : JSON.parse(value)) : null
     );
   }

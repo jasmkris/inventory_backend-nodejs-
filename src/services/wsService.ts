@@ -1,11 +1,13 @@
 import { WebSocketService } from './websocket';
 import { Server as HttpServer } from 'http';
+import { notificationService } from './notification';
 
 let instance: WebSocketService | null = null;
 
 export const initializeWebSocket = (server: HttpServer): WebSocketService => {
   if (!instance) {
     instance = new WebSocketService(server);
+    notificationService.setWebSocketService(instance);
   }
   return instance;
 };

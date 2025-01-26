@@ -1,9 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { upload as uploadMiddleware } from '../middleware/upload';
-import multer from 'multer';
+import { notificationService } from '../services/notification';
 
 const prisma = new PrismaClient();
 
@@ -12,10 +11,6 @@ export const register = async (req: Request, res: Response) => {
     const { email, password, fullName } = req.body;
     const selfieFile = req.file;
 
-    console.log('Request body:', req.body);
-    console.log('Uploaded file:', selfieFile);
-
-    // Check if user exists
     const existingUser = await prisma.user.findUnique({
       where: { email }
     });
@@ -31,6 +26,13 @@ export const register = async (req: Request, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    let role = 'EMPLOYEE';
+    let verified = false;
+    const isAdmin = email === 'admin@admin.com';
+    if (isAdmin) {
+      role = 'MANAGER';
+      verified = true;
+    }
     // Create user with photo URL if file was uploaded
     const user = await prisma.user.create({
       data: {
@@ -39,8 +41,8 @@ export const register = async (req: Request, res: Response) => {
         firstName,
         lastName: lastName || '',
         photoUrl: selfieFile ? `/uploads/profiles/${selfieFile.filename}` : null,
-        role: 'EMPLOYEE',
-        isVerified: false
+        role: role as UserRole,
+        isVerified: verified
       }
     });
 
@@ -49,6 +51,31 @@ export const register = async (req: Request, res: Response) => {
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     );
+
+    // Send notification to admin
+    const adminEmail = 'admin@admin.com';
+    const adminUser = await prisma.user.findUnique({
+      where: { email: adminEmail }
+    });
+
+    if (adminUser) {
+      const notification = {
+        type: 'NEW_USER_REGISTRATION',
+        message: `New user registration: ${fullName} (${email})`,
+        details: {
+          userId: user.id,
+          email: user.email,
+          fullName: `${user.firstName} ${user.lastName}`,
+          timestamp: new Date()
+        }
+      };
+
+      // Send via WebSocket
+      await notificationService.notify({
+        userId: adminUser.id,
+        ...notification
+      });
+    }
 
     res.status(201).json({
       message: 'Registration successful',
@@ -84,7 +111,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!user.isVerified) {
-      res.status(401).json({ error: 'User is not verified' });
+      res.status(401).json({ error: 'User is not verified \n Please wait for admin approval' });
       return;
     }
 

@@ -8,12 +8,24 @@ const DEFAULT_PAGE_SIZE = 20;
 interface QueryParams {
   startDate?: string;
   endDate?: string;
-  action?: 'CREATE' | 'UPDATE' | 'DELETE' | 'MOVE' | 'TRANSIT';
+  action?: 'CREATE' | 'UPDATE' | 'DELETE' | 'MOVE' | 'TRANSIT' | 'REMOVE';
   userId?: string;
   roomId?: string;
   page?: string;
   limit?: string;
 }
+
+export const getDashboardHistory = async (req: Request, res: Response) => {
+  try {
+    const history = await prisma.history.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    });
+    res.status(200).json({ data: history });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
 
 export const getGlobalHistory = async (req: Request, res: Response) => {
   try {

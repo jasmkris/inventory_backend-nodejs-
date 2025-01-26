@@ -1,7 +1,33 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, Category } from '@prisma/client';
 import { redisService } from './redis';
 import Fuse from 'fuse.js';
 import { ElasticsearchService } from './elasticsearch';
+
+interface SearchFilters {
+  category?: Category;
+  roomId?: string;
+  // tags?: string[];
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+  quantity?: {
+    min: number;
+    max: number;
+  };
+}
+
+interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+interface SearchParams {
+  query: string;
+  filters: SearchFilters;
+  pagination: PaginationParams;
+  includeMetadata?: boolean;
+}
 
 export class SearchService {
   private prisma: PrismaClient;
@@ -54,7 +80,7 @@ export class SearchService {
   }
 
   private async fuzzySearch(params: SearchParams) {
-    const { query, filters, pagination } = params;
+    const { query, filters } = params;
     
     // Get base data from database
     const items = await this.getBaseData(filters);
@@ -70,9 +96,11 @@ export class SearchService {
       findAllMatches: true
     });
 
-    // Perform fuzzy search
-    const searchResults = fuse.search(query);
-    return this.processSearchResults(searchResults, pagination);
+    // Perform fuzzy search and return just the items with scores
+    return fuse.search(query).map(result => ({
+      ...result.item,
+      score: result.score
+    }));
   }
 
   private async elasticSearch(params: SearchParams) {
@@ -99,7 +127,7 @@ export class SearchService {
           select: {
             id: true,
             name: true,
-            status: true
+            // status: true
           }
         }
       }
@@ -111,8 +139,12 @@ export class SearchService {
 
     if (filters.category) where.category = filters.category;
     if (filters.roomId) where.roomId = filters.roomId;
-    if (filters.status) where.status = filters.status;
-    if (filters.tags?.length) where.tags = { hasEvery: filters.tags };
+    // if (filters.status) where.status = filters.status;
+    // if (filters.tags?.length) {
+    //   where.tags = {
+    //     hasSome: filters.tags  // Changed from hasEvery to hasSome based on Prisma's array operators
+    //   };
+    // }
     if (filters.dateRange) {
       where.updatedAt = {
         gte: new Date(filters.dateRange.start),
@@ -146,6 +178,26 @@ export class SearchService {
     };
   }
 
+  private buildElasticsearchFilters(filters: SearchFilters) {
+    const must: any[] = [];
+
+    if (filters.category) must.push({ term: { category: filters.category } });
+    if (filters.roomId) must.push({ term: { roomId: filters.roomId } });
+    // if (filters.status) must.push({ term: { status: filters.status } });
+    if (filters.dateRange) {
+      must.push({
+        range: {
+          updatedAt: {
+            gte: filters.dateRange.start,
+            lte: filters.dateRange.end
+          }
+        }
+      });
+    }
+
+    return must;
+  }
+
   private async processSearchResults(results: any[], pagination: PaginationParams) {
     const { page, limit } = pagination;
     const start = (page - 1) * limit;
@@ -163,6 +215,14 @@ export class SearchService {
         scores: results.map(r => r.score)
       }
     };
+  }
+
+  private processElasticsearchResults(results: any) {
+    return results.hits.hits.map((hit: any) => ({
+      id: hit._id,
+      ...hit._source,
+      score: hit._score
+    }));
   }
 
   async getSuggestions(query: string, type: 'object' | 'room' | 'tag' = 'object') {
@@ -199,6 +259,62 @@ export class SearchService {
       },
       take: 10
     });
+  }
+
+  private async getRoomSuggestions(query: string) {
+    return this.prisma.room.findMany({
+      where: {
+        name: { startsWith: query, mode: 'insensitive' }
+      },
+      select: {
+        id: true,
+        name: true
+      },
+      take: 10
+    });
+  }
+
+  private async getTagSuggestions(query: string) {
+    // Since tags are not in schema, return empty array for now
+    return [];
+    
+    // Commented out original implementation
+    // const objects = await this.prisma.object.findMany({
+    //   where: {
+    //     tags: { has: query }
+    //   },
+    //   select: {
+    //     tags: true
+    //   },
+    //   take: 10
+    // });
+    // return [...new Set(objects.flatMap(obj => obj.tags))];
+  }
+
+  private mergeSearchResults(elasticResults: any[], fuzzyResults: any[]) {
+    const merged = [...elasticResults];
+    fuzzyResults.forEach(result => {
+      if (!merged.find(m => m.id === result.id)) {
+        merged.push(result);
+      }
+    });
+    return merged;
+  }
+
+  private applyFiltersAndPagination(results: any[], params: SearchParams) {
+    const { pagination } = params;
+    const start = (pagination.page - 1) * pagination.limit;
+    const end = start + pagination.limit;
+    
+    return {
+      data: results.slice(start, end),
+      pagination: {
+        total: results.length,
+        page: pagination.page,
+        pageSize: pagination.limit,
+        totalPages: Math.ceil(results.length / pagination.limit)
+      }
+    };
   }
 
   // Additional helper methods...

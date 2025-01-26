@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Category, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -35,7 +35,6 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
 export const getAllRooms = async (req: Request, res: Response): Promise<void> => {
   try {
     const { search } = req.query;
-    console.log(search, 'search=============');
     const where = search ? {
       OR: [
         {
@@ -99,7 +98,7 @@ export const getRoomObjects = async (req: Request, res: Response): Promise<void>
 
     const where = {
       roomId,
-      ...(category ? { category: category as 'CONSUMABLE' | 'TEXTILE' | 'EQUIPMENT' | 'OTHER' } : {}),
+      ...(category ? { category: category as Category } : {}),
       ...(search ? {
         OR: [
           {

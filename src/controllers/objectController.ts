@@ -21,18 +21,17 @@ export const createObject = async (req: Request, res: Response): Promise<void> =
       res.status(400).json({ error: `Invalid category. Must be one of: ${Object.values(Category).join(', ')}` });
       return;
     }
-
-    // Check if room exists
-    const room = await prisma.room.findUnique({
-      where: { id: roomId }
-    });
-
-    if (!room) {
-      res.status(404).json({ error: 'Room not found' });
+    // Get room and user data
+    const [room, user] = await Promise.all([
+      prisma.room.findUnique({ where: { id: roomId } }),
+      prisma.user.findUnique({ where: { id: req.user!.id } })
+    ]);
+    
+    if (!room || !user) {
+      res.status(404).json({ error: 'Room or user not found' });
       return;
     }
 
-    // Create object with proper category enum value
     const object = await prisma.object.create({
       data: {
         name,
@@ -43,8 +42,11 @@ export const createObject = async (req: Request, res: Response): Promise<void> =
         history: {
           create: {
             action: 'CREATE',
-            userId: req.user!.id,
-            details: 'Object created'
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            objectName: name,
+            roomName: room.name,
+            details: `${name} created in ${room.name}`
           }
         }
       },
@@ -57,14 +59,9 @@ export const createObject = async (req: Request, res: Response): Promise<void> =
       }
     });
 
-    console.log('Object created successfully:', object);
     res.status(201).json(object);
   } catch (error) {
-    console.error('Error creating object:', error);
-    res.status(400).json({
-      error: 'Failed to create object',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(400).json({ error: 'Failed to create object' });
   }
 };
 
@@ -100,7 +97,21 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
   try {
     const { objectId } = req.params;
     const { name, category, quantity, description, roomId } = req.body;
-    console.log(name, category, quantity, description, roomId, 'req.body updateObject');
+
+    const [existingObject, user, room] = await Promise.all([
+      prisma.object.findUnique({
+        where: { id: objectId },
+        include: { room: true }
+      }),
+      prisma.user.findUnique({ where: { id: req.user!.id } }),
+      roomId ? prisma.room.findUnique({ where: { id: roomId } }) : null
+    ]);
+
+    if (!existingObject || !user) {
+      res.status(404).json({ error: 'Object or user not found' });
+      return;
+    }
+
     const object = await prisma.object.update({
       where: { id: objectId },
       data: {
@@ -112,8 +123,11 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
         history: {
           create: {
             action: 'UPDATE',
-            userId: req.user!.id,
-            details: 'Object updated'
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            objectName: name || existingObject.name,
+            roomName: room?.name || existingObject.room.name,
+            details: `${existingObject.name} updated to ${quantity} from ${existingObject.quantity}`
           }
         }
       },
@@ -132,41 +146,98 @@ export const updateObject = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+export const removeObjectQuantity = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { objectId } = req.params;
+    const { quantity, deleteNote } = req.body;
+    console.log(quantity, deleteNote, 'removeObjectQuantity');
+    // Get object and user data
+    const [object, user] = await Promise.all([
+      prisma.object.findUnique({
+        where: { id: objectId },
+        include: { room: true }
+      }),
+      prisma.user.findUnique({ where: { id: req.user!.id } })
+    ]);
+
+    if (!object || !user) {
+      res.status(404).json({ error: 'Object or user not found' });
+      return;
+    }
+
+    // Check if quantity is valid
+    if (quantity > object.quantity) {
+      res.status(400).json({ error: 'Insufficient quantity' });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Update object quantity
+      await tx.object.update({
+        where: { id: objectId },
+        data: { quantity: object.quantity - quantity }
+      });
+
+      // Create history entry
+      await tx.history.create({
+        data: {
+          action: 'REMOVE',
+          objectId: object.id,
+          userId: user.id,
+          objectName: object.name,
+          userName: `${user.firstName} ${user.lastName}`,
+          roomName: object.room.name,
+          details: `Removed ${quantity} ${object.name} from ${object.room.name} - ${deleteNote}`
+        }
+      });
+    });
+
+    res.json({ message: 'Quantity removed successfully' });
+  } catch (error) {
+    console.error('Remove quantity operation failed:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 export const deleteObject = async (req: Request, res: Response): Promise<void> => {
   try {
     const { objectIds } = req.body;
-    console.log('Objects to delete:', objectIds);
-    console.log('User ID:', req.user!.id);
-    // Create final history entry before deletion
-    const deletedObjects: any[] = [];
-    // const errors = [];
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
 
-    objectIds.map(async (id: string) => {
-      await prisma.history.create({
-        data: {
-          objectId: id,
-          userId: req.user!.id,
-          action: 'DELETE',
-          details: 'Object deleted'
-        }
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    await Promise.all(objectIds.map(async (id: string) => {
+      const object = await prisma.object.findUnique({
+        where: { id },
+        include: { room: true }
       });
 
-      // 2. Delete existing history records
-      await prisma.history.deleteMany({
-        where: { objectId: id }
-      });
+      if (object) {
+        // Create final history entry
+        await prisma.history.create({
+          data: {
+            action: 'DELETE',
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            objectId: id,
+            objectName: object.name,
+            roomName: object.room.name,
+            details: `${object.name} deleted from ${object.room.name}`
+          }
+        });
 
-      // 3. Finally delete the object
-      await prisma.object.delete({
-        where: { id: id }
-      });
-      deletedObjects.push(id);
-    });
+        // Delete the object
+        await prisma.object.delete({
+          where: { id }
+        });
+      }
+    }));
 
-    console.log('Deleted objects:', deletedObjects);
-    // console.log('Errors:', errors);
-    res.status(200).json({ message: 'Object deleted successfully' });
-  } catch (error: any) {
+    res.status(200).json({ message: 'Objects deleted successfully' });
+  } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -174,18 +245,15 @@ export const deleteObject = async (req: Request, res: Response): Promise<void> =
 export const deleteAllObjects = async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId } = req.params;
-    console.log('Room ID:', roomId);
-
-    // First get all objects in this room
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    
+    // Get all objects with room info
     const objectsInRoom = await prisma.object.findMany({
       where: { roomId },
-      select: { id: true }
+      include: { room: true }
     });
 
-    const objectIds = objectsInRoom.map(obj => obj.id);
-    console.log('Objects to delete:', objectIds);
-
-    if (objectIds.length === 0) {
+    if (!user || objectsInRoom.length === 0) {
       res.status(200).json({ message: 'No objects found in this room' });
       return;
     }
@@ -193,75 +261,146 @@ export const deleteAllObjects = async (req: Request, res: Response): Promise<voi
     await prisma.$transaction(async (tx) => {
       // Create deletion history entries for all objects
       await tx.history.createMany({
-        data: objectIds.map(id => ({
-          objectId: id,
-          userId: req.user!.id,
+        data: objectsInRoom.map(obj => ({
+          objectId: obj.id,
+          userId: user.id,
+          userName: `${user.firstName} ${user.lastName}`,
+          objectName: obj.name,
+          roomName: obj.room.name,
           action: 'DELETE',
-          details: `Object deleted from room ${roomId}`
+          details: `${obj.name} deleted from ${obj.room.name}`
         }))
       });
-      await tx.history.deleteMany({
-        where: { objectId: { in: objectIds } }
-      });
+
       // Delete all objects in the room
       await tx.object.deleteMany({
         where: { roomId }
       });
     });
-    
-    res.status(200).json({ 
+
+    res.status(200).json({
       message: 'All objects deleted successfully',
-      deletedCount: objectIds.length,
-      roomId
+      deletedCount: objectsInRoom.length
     });
   } catch (error) {
     console.error('Delete operation failed:', error);
-    res.status(500).json({ 
-      error: 'Server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
 export const moveObject = async (req: Request, res: Response): Promise<void> => {
   try {
     const { objectId } = req.params;
-    const { roomId, reason } = req.body;
+    const { roomId, quantity } = req.body;
 
-    // Check if target room exists
-    const room = await prisma.room.findUnique({
-      where: { id: roomId }
-    });
+    // Get all required data
+    const [sourceObject, targetRoom, user] = await Promise.all([
+      prisma.object.findUnique({ where: { id: objectId }, include: { room: true } }),
+      prisma.room.findUnique({ where: { id: roomId } }),
+      prisma.user.findUnique({ where: { id: req.user!.id } })
+    ]);
 
-    if (!room) {
-      res.status(404).json({ error: 'Target room not found' });
+    if (!sourceObject || !targetRoom || !user) {
+      res.status(404).json({ error: 'Object, room, or user not found' });
       return;
     }
 
-    const object = await prisma.object.update({
-      where: { id: objectId },
-      data: {
-        roomId,
-        history: {
-          create: {
-            action: 'MOVE',
-            userId: req.user!.id,
-            details: reason || `Moved to ${room.name}`
+    // Check if quantity is valid
+    if (quantity > sourceObject.quantity) {
+      res.status(400).json({ error: 'Insufficient quantity' });
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Find existing object in target room
+      const existingTargetObject = await tx.object.findFirst({
+        where: {
+          name: sourceObject.name,
+          roomId: roomId,
+          category: sourceObject.category
+        }
+      });
+
+      // Update source object quantity
+      await tx.object.update({
+        where: { id: objectId },
+        data: { quantity: sourceObject.quantity - quantity }
+      });
+
+      if (existingTargetObject) {
+        // Update existing object in target room
+        await tx.object.update({
+          where: { id: existingTargetObject.id },
+          data: { quantity: existingTargetObject.quantity + quantity }
+        });
+      } else {
+        // Create new object in target room
+        await tx.object.create({
+          data: {
+            name: sourceObject.name,
+            category: sourceObject.category,
+            description: sourceObject.description,
+            quantity: quantity,
+            roomId: roomId
           }
+        });
+      }
+
+      // Create history entry
+      await tx.history.create({
+        data: {
+          action: 'MOVE',
+          objectId: sourceObject.id,
+          userId: user.id,
+          objectName: sourceObject.name,
+          userName: `${user.firstName} ${user.lastName}`,
+          roomName: targetRoom.name,
+          details: `${quantity} ${sourceObject.name} moved from ${sourceObject.room.name} to ${targetRoom.name}`
         }
-      },
-      include: {
-        room: true,
-        history: {
-          take: 1,
-          orderBy: { createdAt: 'desc' }
-        }
+      });
+    });
+
+    res.status(200).json({ message: 'Object moved successfully' });
+  } catch (error) {
+    console.error('Move operation failed:', error);
+    res.status(400).json({ error: 'Failed to move object' });
+  }
+};
+
+export const updateObjectQuantity = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { objectId } = req.params;
+    const { quantity } = req.body;
+
+    console.log(objectId, quantity, 'updateObjectQuantity');
+    
+    await prisma.object.update({
+      where: { id: objectId },
+      data: { quantity }
+    });
+
+    const updatedObject = await prisma.object.findUnique({
+      where: { id: objectId },
+      include: { room: true }
+    });
+
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+
+    await prisma.history.create({
+      data: {
+        action: 'UPDATE',
+        objectId: objectId,
+        userId: user!.id,
+        userName: `${user!.firstName} ${user!.lastName}`,
+        objectName: updatedObject!.name,
+        roomName: updatedObject!.room.name,
+        details: `${updatedObject!.name} updated quantity to ${quantity} from ${updatedObject!.quantity}`
       }
     });
 
-    res.json(object);
+    res.status(200).json({ message: 'Object quantity updated successfully', object: updatedObject });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to move object' });
+    res.status(400).json({ error: 'Failed to update object quantity' });
   }
 };
 
@@ -270,14 +409,16 @@ export const createVariant = async (req: Request, res: Response): Promise<void> 
     const { originalObjectId } = req.params;
     const { name, description, quantity, roomId, category } = req.body;
 
-    // Get original object
-    const originalObject = await prisma.object.findUnique({
-      where: { id: originalObjectId },
-      include: { variants: true }
-    });
+    const [originalObject, user] = await Promise.all([
+      prisma.object.findUnique({
+        where: { id: originalObjectId },
+        include: { variants: true, room: true }
+      }),
+      prisma.user.findUnique({ where: { id: req.user!.id } })
+    ]);
 
-    if (!originalObject) {
-      res.status(404).json({ error: 'Original object not found' });
+    if (!originalObject || !user) {
+      res.status(404).json({ error: 'Original object or user not found' });
       return;
     }
 
@@ -293,17 +434,14 @@ export const createVariant = async (req: Request, res: Response): Promise<void> 
         history: {
           create: {
             action: 'CREATE',
-            userId: req.user!.id,
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            objectName: name || originalObject.name,
+            roomName: originalObject.room.name,
             details: `Created as variant of ${originalObject.name}`
           }
         }
       }
-    });
-
-    // Notify via WebSocket
-    wsService.getInstance().notifyObjectUpdate(roomId, {
-      action: 'VARIANT_CREATED',
-      object: variant
     });
 
     res.status(201).json(variant);
@@ -317,25 +455,32 @@ export const transitObject = async (req: Request, res: Response): Promise<void> 
     const { objectId } = req.params;
     const { reason } = req.body;
 
-    // Get transit room
-    const transitRoom = await prisma.room.findFirst({
-      where: { isTransit: true }
-    });
+    const [transitRoom, object, user] = await Promise.all([
+      prisma.room.findFirst({ where: { isTransit: true } }),
+      prisma.object.findUnique({
+        where: { id: objectId },
+        include: { room: true }
+      }),
+      prisma.user.findUnique({ where: { id: req.user!.id } })
+    ]);
 
-    if (!transitRoom) {
-      res.status(404).json({ error: 'Transit room not found' });
+    if (!transitRoom || !object || !user) {
+      res.status(404).json({ error: 'Transit room, object, or user not found' });
       return;
     }
 
-    const object = await prisma.object.update({
+    const updatedObject = await prisma.object.update({
       where: { id: objectId },
       data: {
         roomId: transitRoom.id,
         history: {
           create: {
             action: 'TRANSIT',
-            userId: req.user!.id,
-            details: reason
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            objectName: object.name,
+            roomName: transitRoom.name,
+            details: `${object.name} moved to transit from ${object.room.name}. Reason: ${reason}`
           }
         }
       },
@@ -348,7 +493,7 @@ export const transitObject = async (req: Request, res: Response): Promise<void> 
       }
     });
 
-    res.json(object);
+    res.status(200).json({ message: 'Object updated successfully', object: updatedObject });
   } catch (error) {
     res.status(400).json({ error: 'Failed to transit object' });
   }

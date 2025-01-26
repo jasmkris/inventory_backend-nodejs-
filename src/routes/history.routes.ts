@@ -6,7 +6,8 @@ import {
   getGlobalHistory,
   getRoomHistory,
   getUserHistory,
-  getHistoryStats
+  getHistoryStats,
+  getDashboardHistory
 } from '../controllers/historyController';
 
 const router = express.Router();
@@ -18,7 +19,7 @@ router.get(
   validate([
     query('startDate').optional().isISO8601(),
     query('endDate').optional().isISO8601(),
-    query('action').optional().isIn(['CREATE', 'UPDATE', 'DELETE', 'MOVE', 'TRANSIT']),
+    query('action').optional().isIn(['CREATE', 'UPDATE', 'DELETE', 'MOVE', 'TRANSIT', 'REMOVE']),
     query('userId').optional().isString(),
     query('roomId').optional().isString(),
     query('page').optional().isInt({ min: 1 }),
@@ -55,5 +56,7 @@ router.get(
 
 // History statistics
 router.get('/stats', auth, getHistoryStats);
+
+router.get('/dashboard', getDashboardHistory);
 
 export default router; 

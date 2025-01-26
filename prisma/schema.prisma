@@ -22,13 +22,13 @@ model User {
 }
 
 model Room {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
-  isTransit   Boolean   @default(false)
+  isTransit   Boolean  @default(false)
   objects     Object[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Object {
@@ -49,15 +49,27 @@ model Object {
 
 model History {
   id        String   @id @default(cuid())
-  objectId  String
-  object    Object   @relation(fields: [objectId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
   action    Action
-  details   String?
+  details   String
   createdAt DateTime @default(now())
+
+  // Store names directly
+  objectName String
+  userName   String
+  roomName   String?
+
+  // Keep references but make them optional
+  objectId String?
+  userId   String?
+  object   Object? @relation(fields: [objectId], references: [id], onDelete: SetNull)
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([objectId])
+  @@index([userId])
 }
-  // isActive  Boolean  @default(true)
+
+// isActive  Boolean  @default(true)
 
 model Notification {
   id        String   @id @default(uuid())
@@ -78,9 +90,19 @@ enum UserRole {
 }
 
 enum Category {
-  CONSUMABLE
-  TEXTILE
+  TOOLS
+  GARDEN
+  AUTOMOTIVE
+  RED_WINE
+  WHITE_WINE
+  SPARKLING_WINE
+  TEXTILES
+  TABLEWARE
+  GLASSWARE
+  COOKWARE
+  MAINTENANCE
   EQUIPMENT
+  CONSUMABLE
   OTHER
 }
 
@@ -90,4 +112,5 @@ enum Action {
   DELETE
   MOVE
   TRANSIT
+  REMOVE
 }

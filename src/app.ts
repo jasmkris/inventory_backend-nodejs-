@@ -11,6 +11,7 @@ import wsService from './services/wsService';
 import searchRoutes from './routes/search.routes';
 import http from 'http';
 import path from 'path';
+import historyRoutes from './routes/history.routes';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/objects', objectRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/history', historyRoutes);
 
 // Swagger documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));

@@ -12,7 +12,9 @@ import {
   getObjectHistory,
   transitObject,
   getAllObjects,
-  deleteAllObjects
+  deleteAllObjects,
+  updateObjectQuantity,
+  removeObjectQuantity
 } from '../controllers/objectController';
 
 const router = express.Router();
@@ -23,7 +25,7 @@ router.post(
   auth,
   validate([
     body('name').notEmpty().trim(),
-    body('category').isIn(['CONSUMABLE', 'TEXTILE', 'EQUIPMENT', 'OTHER']),
+    body('category').isIn(['TOOLS', 'GARDEN', 'AUTOMOTIVE', 'RED_WINE', 'WHITE_WINE', 'SPARKLING_WINE', 'TEXTILES', 'TABLEWARE', 'GLASSWARE', 'COOKWARE', 'MAINTENANCE', 'EQUIPMENT', 'CONSUMABLE', 'OTHER']),
     body('quantity').isInt({ min: 1 }),
     body('roomId').notEmpty(),
     body('description').optional().trim()
@@ -40,8 +42,7 @@ router.put(
   auth,
   validate([
     body('name').optional().notEmpty().trim(),
-    body('category').optional().isIn(['CONSUMABLE', 'TEXTILE', 'EQUIPMENT', 'OTHER']),
-    body('quantity').optional().isInt({ min: 1 }),
+    body('category').optional().isIn(['TOOLS', 'GARDEN', 'AUTOMOTIVE', 'RED_WINE', 'WHITE_WINE', 'SPARKLING_WINE', 'TEXTILES', 'TABLEWARE', 'GLASSWARE', 'COOKWARE', 'MAINTENANCE', 'EQUIPMENT', 'CONSUMABLE', 'OTHER']),
     body('description').optional().trim(),
     body('roomId').optional().notEmpty()
   ]),
@@ -57,9 +58,28 @@ router.post(
   auth,
   validate([
     body('roomId').notEmpty(),
-    body('reason').optional().trim()
+    body('quantity').isInt({ min: 1 }),
   ]),
   moveObject
+);
+
+router.put(
+  '/:objectId/quantity',
+  auth,
+  validate([
+    body('quantity').isInt({ min: 1 }),
+  ]),
+  updateObjectQuantity
+);
+
+router.put(
+  '/:objectId/remove',
+  auth,
+  validate([
+    body('quantity').isInt({ min: 1 }),
+    body('deleteNote').optional().trim()
+  ]),
+  removeObjectQuantity
 );
 
 router.post(

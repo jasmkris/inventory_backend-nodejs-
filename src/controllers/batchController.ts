@@ -14,7 +14,7 @@ interface BatchOperation {
   status?: string;
   tags?: string[];
   quantity?: number;
-  action: 'MOVE' | 'DELETE' | 'TRANSIT' | 'TAG' | 'UPDATE_QUANTITY' | 'ARCHIVE';
+  action: 'MOVE' | 'DELETE' | 'TRANSIT' | 'TAG' | 'UPDATE_QUANTITY' | 'ARCHIVE' | 'REMOVE';
 }
 
 export class BatchController {
@@ -67,6 +67,8 @@ export class BatchController {
             return await this.batchUpdateQuantity(tx, objects, operation, userId);
           case 'ARCHIVE':
             return await this.batchArchive(tx, objects, operation, userId);
+          case 'REMOVE':
+            return await this.batchRemove(tx, objects, operation, userId);
           default:
             throw new ValidationError('Invalid batch operation');
         }
@@ -100,8 +102,7 @@ export class BatchController {
         where: { id: obj.id },
         data: {
           roomId: targetRoom.id,
-          updatedAt: new Date(),
-          status: 'MOVED' 
+          updatedAt: new Date()
         }
       });
 
@@ -109,12 +110,11 @@ export class BatchController {
         data: {
           objectId: obj.id,
           userId,
+          objectName: obj.name,
+          userName: `${obj.user?.firstName} ${obj.user?.lastName}`,
+          roomName: obj.room?.name,
           action: 'MOVE',
-          details: {
-            fromRoomId: obj.roomId,
-            toRoomId: targetRoom.id,
-            reason: operation.reason
-          }
+          details: `${obj.name} moved from ${obj.room.name} to ${targetRoom.name}`
         }
       });
 
@@ -169,7 +169,7 @@ export class BatchController {
         where: { id: obj.id },
         data: {
           roomId: transitRoom.id,
-          status: 'IN_TRANSIT'
+          updatedAt: new Date()
         }
       });
 
@@ -192,30 +192,30 @@ export class BatchController {
     operation: BatchOperation,
     userId: string
   ) {
-    const { tags = [], action: tagAction = 'ADD' } = operation;
+    // const { tags = [], action: tagAction = 'ADD' } = operation;
 
-    await Promise.all(objects.map(async (obj) => {
-      const currentTags = obj.tags || [];
-      const newTags = tagAction === 'ADD' 
-        ? [...new Set([...currentTags, ...tags])]
-        : currentTags.filter((t: string) => !tags.includes(t));
+    // await Promise.all(objects.map(async (obj) => {
+    //   const currentTags = obj.tags || [];
+    //   const newTags = tagAction === 'ADD' 
+    //     ? [...new Set([...currentTags, ...tags])]
+    //     : currentTags.filter((t: string) => !tags.includes(t));
 
-      await tx.object.update({
-        where: { id: obj.id },
-        data: { tags: newTags }
-      });
+    //   await tx.object.update({
+    //     where: { id: obj.id },
+    //     data: { tags: newTags }
+    //   });
 
-      await tx.history.create({
-        data: {
-          objectId: obj.id,
-          userId,
-          action: 'TAG',
-          details: `${tagAction === 'ADD' ? 'Added' : 'Removed'} tags: ${tags.join(', ')}`
-        }
-      });
-    }));
+    //   await tx.history.create({
+    //     data: {
+    //       objectId: obj.id,
+    //       userId,
+    //       action: 'TAG',
+    //       details: `${tagAction === 'ADD' ? 'Added' : 'Removed'} tags: ${tags.join(', ')}`
+    //     }
+    //   });
+    // }));
 
-    return { message: `Successfully ${tagAction.toLowerCase()}ed tags to ${objects.length} objects` };
+    // return { message: `Successfully ${tagAction.toLowerCase()}ed tags to ${objects.length} objects` };
   }
 
   private async batchUpdateQuantity(
@@ -236,7 +236,7 @@ export class BatchController {
         data: {
           objectId: obj.id,
           userId,
-          action: 'UPDATE_QUANTITY',
+          action: 'UPDATE',
           details: `Updated quantity to ${quantity}`
         }
       });
@@ -254,14 +254,14 @@ export class BatchController {
     await Promise.all(objects.map(async (obj) => {
       await tx.object.update({
         where: { id: obj.id },
-        data: { status: 'ARCHIVED' }
+        data: { updatedAt: new Date() }
       });
 
-      await tx.history.create({
+        await tx.history.create({
         data: {
           objectId: obj.id,
           userId,
-          action: 'ARCHIVE',
+          action: 'DELETE',
           details: operation.reason || 'Object archived'
         }
       });
@@ -270,7 +270,33 @@ export class BatchController {
     return { message: `Successfully archived ${objects.length} objects` };
   }
 
-  // Similar implementations for other batch operations...
+  private async batchRemove(
+    tx: Prisma.TransactionClient,
+    objects: any[],
+    operation: BatchOperation,
+    userId: string
+  ) {
+    await Promise.all(objects.map(async (obj) => {
+      await tx.object.update({
+        where: { id: obj.id },
+        data: { quantity: obj.quantity - (operation.quantity || 0) }
+      });
+
+      await tx.history.create({
+        data: {
+          objectId: obj.id,
+          userId,
+          objectName: obj.name,
+          userName: `${obj.user?.firstName} ${obj.user?.lastName}`,
+          roomName: obj.room?.name,
+          action: 'UPDATE',
+          details: `Removed ${operation.quantity} ${obj.name} - ${operation.reason || 'No reason provided'}`
+        }
+      });
+    }));
+
+    return { message: `Successfully removed quantity from ${objects.length} objects` };
+  }
 
   private async invalidateCaches(operation: BatchOperation) {
     const patterns = new Set<string>();

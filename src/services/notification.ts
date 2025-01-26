@@ -2,19 +2,24 @@ import { WebSocketService } from './websocket';
 import { redisService } from './redis';
 import { PrismaClient } from '@prisma/client';
 import { EventEmitter } from 'events';
-import { getWebSocketService } from './wsService';
+// import { getWebSocketService } from './wsService';
 
 export class NotificationService extends EventEmitter {
-  private ws: WebSocketService;
+  private ws!: WebSocketService;
   private prisma: PrismaClient;
   private readonly NOTIFICATION_TTL = 86400; // 24 hours
   private readonly MAX_RECENT_NOTIFICATIONS = 1000;
 
-  constructor(ws: WebSocketService) {
+  // constructor(ws: WebSocketService) {
+  constructor() {
     super();
-    this.ws = ws;
+    // this.ws = ws;
     this.prisma = new PrismaClient();
     this.setupEventHandlers();
+  }
+
+  setWebSocketService(ws: WebSocketService) {
+    this.ws = ws;
   }
 
   private setupEventHandlers() {
@@ -43,7 +48,7 @@ export class NotificationService extends EventEmitter {
 
   async notifyObjectChange(data: {
     objectId: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'MOVE' | 'TRANSIT';
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'MOVE' | 'TRANSIT' | 'REMOVE';
     userId: string;
     details: any;
   }) {
@@ -86,23 +91,25 @@ export class NotificationService extends EventEmitter {
   }
 
   private async storeNotification(notification: any) {
-    const key = `notification:${Date.now()}:${Math.random().toString(36)}`;
-    
-    await Promise.all([
-      redisService.set(key, notification, this.NOTIFICATION_TTL),
-      redisService.addToSortedSet('recent_notifications', notification.timestamp.getTime(), key),
-      this.pruneOldNotifications()
-    ]);
+    try {
+      // Ensure timestamp exists and is a valid Date
+      const timestamp = notification.details?.timestamp 
+        ? new Date(notification.details.timestamp) 
+        : new Date();
 
-    // Store in database for permanent record
-    await this.prisma.notification.create({
-      data: {
-        type: notification.type,
-        userId: notification.userId,
-        details: notification,
-        createdAt: notification.timestamp
-      }
-    });
+      // Store in Redis with proper timestamp
+      const key = `notification:${timestamp.getTime()}:${notification.userId}`;
+      await redisService.set(key, JSON.stringify(notification), this.NOTIFICATION_TTL);
+      
+      // Add to recent notifications sorted set
+      await redisService.addToSortedSet('recent_notifications', key, Number(timestamp.getTime()));
+      
+      // Prune old notifications
+      await this.pruneOldNotifications();
+    } catch (error) {
+      console.error('Error storing notification:', error);
+      this.emit('error', error);
+    }
   }
 
   private async broadcastNotification(notification: any) {
@@ -132,7 +139,7 @@ export class NotificationService extends EventEmitter {
       redisService.invalidatePattern(`object:${notification.objectId}:*`),
       this.prisma.history.updateMany({
         where: { objectId: notification.objectId },
-        data: { isActive: false }
+        data: { createdAt: new Date() }
       })
     ]);
   }
@@ -160,6 +167,27 @@ export class NotificationService extends EventEmitter {
       take: limit
     });
   }
+
+  async notify(notification: any) {
+    try {
+      // Ensure notification has required fields
+      const enrichedNotification = {
+        ...notification,
+        details: {
+          ...notification.details,
+          timestamp: new Date()
+        }
+      };
+
+      this.emit('notification', enrichedNotification);
+      if (enrichedNotification.userId) {
+        this.ws.sendToUser(enrichedNotification.userId, 'notification', enrichedNotification);
+      }
+    } catch (error) {
+      console.error('Notification error:', error);
+      this.emit('error', error);
+    }
+  }
 }
 
-export const notificationService = new NotificationService(getWebSocketService()); 
+export const notificationService = new NotificationService(); 

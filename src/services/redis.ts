@@ -79,12 +79,12 @@ class RedisService {
     }
   }
 
-  async addToSortedSet(key: string, score: number, member: string): Promise<void> {
+  async addToSortedSet(key: string, member: string, score: number) {
     if (!this.isConnected || !this.client) return;
     try {
-      await this.client.zadd(key, score, member);
+      return this.client.zadd(key, score, member);
     } catch (error) {
-      // Silently fail if Redis is not available
+      console.error('Redis error:', error);
     }
   }
 
@@ -113,6 +113,33 @@ class RedisService {
     } catch (error) {
       return [];
     }
+  }
+
+  async addToSet(key: string, value: string) {
+    if (!this.isConnected || !this.client) return;
+    try {
+      return this.client.sadd(key, value);
+    } catch (error) {
+      // Silently fail if Redis is not available
+    }
+  }
+
+  async mget(keys: string[]) {
+    if (!this.isConnected || !this.client) return [];
+    try {
+      return this.client.mget(keys);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async mset(entries: { key: string; value: string }[], ttl: number) {
+    if (!this.isConnected || !this.client) return;
+    const pipeline = this.client.pipeline();
+    entries.forEach(({ key, value }) => {
+      pipeline.set(key, value, 'EX', ttl);
+    });
+    return pipeline.exec();
   }
 }
 
